@@ -33,19 +33,33 @@ public class EMAlgorithm {
 	private static void eStep(){
 		double featureNumerators[][][]=new double[numClusters][numExamples][numFeatures];
 		double featureDenominators[][]=new double[numExamples][numFeatures];
-
-		//find the numerator & denominator
+		
+		double biggestNumerator=0;//is there only 1 biggest numerator, or a biggestNumerator per feature????
+		
+		//find the numerators
 		for(int i=0;i<numClusters;i++){
-			
 			for(int j=0;j<numExamples;j++){
 				for(int k=0;k<numFeatures;k++){
 					NormalDistribution norm = new NormalDistribution(means[i][k],stdDevs[i][k]);
 					final double probFeatureGivenCluster = norm.density(rawData[j][k]);
+					//for every feature in every data point, there will be a numerator 
 					featureNumerators[i][j][k] = Math.log( priorClusterProb[i] ) + Math.log(probFeatureGivenCluster);
-					featureDenominators[j][k] += featureNumerators[i][j][k];//sum over the clusters
+					
+					if(featureNumerators[i][j][k]>biggestNumerator){biggestNumerator=featureNumerators[i][j][k];}
 				}
 			}
-			
+		}
+
+		//find the  denominators
+		for(int i=0;i<numClusters;i++){
+			for(int j=0;j<numExamples;j++){
+				for(int k=0;k<numFeatures;k++){
+					//the denominator is independent of the clusters, and is essentially a normalizing factor
+					//denominator is found by summing up each feature's total across the different clusters
+					//log sum trick is used here
+					featureDenominators[j][k] += Math.exp( featureNumerators[i][j][k]-biggestNumerator );
+				}
+			}
 		}
 		
 		//iterate over every feature of an example to find probability of example belonging to a cluster
@@ -53,7 +67,7 @@ public class EMAlgorithm {
 		for(int i=0;i<numClusters;i++){
 			for(int j=0;j<numExamples;j++){
 				for(int k=0;k<numFeatures;k++){
-					probExampleBelongsToCluster[i][j] += featureNumerators[i][j][k]/featureDenominators[j][k];
+					probExampleBelongsToCluster[i][j] += featureNumerators[i][j][k] - Math.log( featureDenominators[j][k] );
 				}
 			}
 		}
