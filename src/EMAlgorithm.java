@@ -23,14 +23,17 @@ public class EMAlgorithm {
 		init();
 		
 		//BUSINESS LOGIC
-		eStep();
-		mStep();
+		boolean repeat=true;
+		while(repeat){
+			repeat = eStep();
+			mStep();
+		}
 		
 		//print out clustered data
 		writeFile(args[3]);
 	}
 	
-	private static void eStep(){
+	private static boolean eStep(){
 		double featureNumerators[][][]=new double[numClusters][numExamples][numFeatures];
 		double featureDenominators[][]=new double[numExamples][numFeatures];
 		
@@ -83,6 +86,7 @@ public class EMAlgorithm {
 			}
 		}
 		
+		return false;
 	}
 	
 	private static void mStep(){
