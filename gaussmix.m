@@ -4,17 +4,16 @@ function gaussmix(numClusters, dataFile,modelFile)
     numClustersNumeric = str2double(numClusters);
     [data,numExamples,numFeatures] = scanIn(dataFile);
     [means, variances, priors] = init(data,numClustersNumeric);
-    totalLogProb=-100000000000;
+    totalLogProb = realmin;
     
     repeat=true;
     while repeat
-        [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numClustersNumeric,means,variances,priors);
+        [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClustersNumeric,means,variances,priors);
         [means, variances, priors] = mStep(data,numExamples,numFeatures,numClustersNumeric,clusterLogDist);
-        %clusterLogDistNumerators
-        %logPMax
-        probAfterSteps = totalLikelihoodOfData(clusterLogDistDenominators);
-        repeat = (probAfterSteps-totalLogProb) > 0.001;
-        totalLogProb = probAfterSteps;
+        %exp(clusterLogDist)
+        probAfterIteration = totalLikelihoodOfData(numExamples,clusterLogDistDenominators)
+        repeat = (probAfterIteration-totalLogProb) > 0.001;
+        totalLogProb = probAfterIteration;
     end
     
     writeOutput(modelFile,clusterLogDist,data);
@@ -45,7 +44,7 @@ function writeOutput(modelFile,clusterLogDist,data)
     %cluster the example is assign to
     assignedCluster = (1:numExamples).*0;
     for ex=1:numExamples
-        max=-1000000000;
+        max = realmin;
         
         for c=1:numClusters
             if(clusterLogDist(ex,c)>max)
@@ -53,9 +52,15 @@ function writeOutput(modelFile,clusterLogDist,data)
                 max = clusterLogDist(ex,c);
             end
         end
+        
+        fprintf(fid,'%d ',assignedCluster(ex) );
+        fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
+        fprintf(fid,'\n');
     end
     
-    %print out all the cluster assignments in order 
+    %{
+    %print out all the cluster assignments in order--not right, print off
+    %they are. in the wine-true they just happen to be in order
     for c=1:numClusters
        for ex=1:numExamples
            if(assignedCluster(ex) == c)
@@ -65,6 +70,7 @@ function writeOutput(modelFile,clusterLogDist,data)
            end
        end
     end
+    %}
     
     fclose(fid);
 end
@@ -91,8 +97,8 @@ function [means, variances, priors] = init(data, numClusters)
     %}
     
     %find mins and maxs of each data feature
-    mins( 1 : numFeat ) =  10000000;
-    maxs( 1 : numFeat ) =  -10000000;
+    mins( 1 : numFeat ) =  realmax;
+    maxs( 1 : numFeat ) =  realmin;
     for i=1:numEx
        for j=1:numFeat
            if(data(i,j)>maxs(j))
@@ -120,13 +126,11 @@ function [means, variances, priors] = init(data, numClusters)
     %variances(1,:,:)%ensure that variances are diagonal
 end
 
-function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numClusters,means,variances,priors)
+function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClusters,means,variances,priors)
     clusterLogDist = zeros(numExamples,numClusters);
-    clusterLogDistDenominators = zeros(numExamples);
-    numFeatMatrix = size(data);
-    numFeatures = numFeatMatrix(2);
-    logPMax=-1000000000000000;
-            
+    clusterLogDistDenominators = (1:numExamples).*0;
+    logPMax = realmin;
+    
     %{
     data
     means
@@ -178,7 +182,7 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
         end
     end
     
-    %clusterLogDist
+    clusterLogDist
     
     %now we have the cluster distributions. The distributions indicate the
     %weight each data point has towards each cluster
@@ -237,7 +241,7 @@ function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClus
     end
 end
 
-function totalLogProb = totalLikelihoodOfData(clusterLogDistDenominators)
+function totalLogProb = totalLikelihoodOfData(numExamples,clusterLogDistDenominators)
     totalLogProb=0;
     
     %{
@@ -257,9 +261,7 @@ function totalLogProb = totalLikelihoodOfData(clusterLogDistDenominators)
     end
     %}
     
-    %sum up the denominators to find the total
-    numExamples = size(clusterLogDistDenominators);
-    
+    %sum up the denominators to find the total    
     for ex=1:numExamples
         totalLogProb = totalLogProb +clusterLogDistDenominators(ex);
     end
