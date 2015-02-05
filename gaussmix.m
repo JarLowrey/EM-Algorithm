@@ -1,31 +1,46 @@
-function gaussmix(numClusters, dataFile,modelFile)
-    numClustersNumeric = str2double(numClusters);
+function logProb = gaussmix(numClusters, dataFile, modelFile)
+    if isa(numClusters,'char')
+        numClusters = str2double(numClusters);
+    end
+    
     [data,numExamples,numFeatures] = scanIn(dataFile);
-    [means, variances, priors] = init(data,numClustersNumeric);
+    [means, variances, priors] = init(data,numClusters);
     logProb = -realmax;
     
     repeat=true;
     iterationNo=0;
     while repeat 
-        [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClustersNumeric,means,variances,priors);
-        [means, variances, priors] = mStep(data,numExamples,numFeatures,numClustersNumeric,clusterLogDist);
+        [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClusters,means,variances,priors);
+        [means, variances, priors] = mStep(data,numExamples,numFeatures,numClusters,clusterLogDist);
         
         %see if stopping condition has been met by finding total log Prob
         probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators);
-        nextLogProbMinusCurrent = probAfterIteration-logProb;
-        repeat = abs(nextLogProbMinusCurrent) > 0.00000001;
-        logProb = probAfterIteration;
-        iterationNo = iterationNo+1
+        repeat = (probAfterIteration-logProb) > 0.001;
         
         %total log probability is monotonically increasing. Otherwise there
         %is an error in the program
-        if nextLogProbMinusCurrent<0  && iterationNo ~= 2 %%first iteration, (prob-realmax), results in issues, so ignore
+        if ( probAfterIteration-logProb ) < 0
            disp('ERROR : Total probability decreasing!!'); 
            return
         end
+        
+        logProb = probAfterIteration;
+        iterationNo = iterationNo+1;
+        totalLogProbsVector(iterationNo) = probAfterIteration;
     end
     
+    plotTotalLogProbData(totalLogProbsVector,dataFile);
     writeOutput(modelFile,clusterLogDist,data);
+end
+
+function plotTotalLogProbData(totalLogProbVector,dataFile)
+    figure(1);
+    sizeOfVector = size(totalLogProbVector);
+    plot((1:sizeOfVector(2)),totalLogProbVector(1,:) );
+    title(dataFile);
+    xlabel('Iteration');
+    ylabel('Total Log Probability');
+
 end
 
 function [rawData,numExamples,numFeatures] = scanIn( dataFile)
@@ -72,7 +87,11 @@ end
 
 function [means, variances, priors] = init(data, numClusters)
     %initialize cluster priors to a uniform distribution
-    priors( 1:numClusters ) =  1.0 / double(numClusters) ;
+    if numClusters==1
+        priors = 1;
+    else
+        priors( 1:numClusters ) =  1.0 / double(numClusters) ;
+    end
     
     %initialize priors for each cluster to a uniform
     %distribution
@@ -100,9 +119,11 @@ function [means, variances, priors] = init(data, numClusters)
     variances = zeros(numClusters,numFeat,numFeat);
     
     for i=1:numClusters
+        %randEx = 1+floor(rand()*numEx);%randomly choose from data
         for j=1:numFeat
             range = maxs(j)-mins(j);
-            means(i,j) = range*rand()+mins(j);
+            means(i,j) = range*rand()+mins(j);%random in range of data
+            %means(i,j) = data( randEx , j);%randomly choose from data
             variances(i,j,j) = ( range / 2.0 )^2 ;
         end
     end
@@ -127,11 +148,26 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
             %transpose has switched
             %NOTE:inverse tempVariance completed via the divide-faster than
             %inv(tempVariance)
-            normalLogOfExp = -.5 * ( data(ex,:) - means(c,:) ) / clusterVariance *  transpose( data(ex,:) - means(c,:) ) ; 
+            diffDataAndMean = data(ex,:) - means(c,:);
+            normalLogOfExp = -.5 * diffDataAndMean / clusterVariance *  transpose( diffDataAndMean ) ; 
             
             %P(Ci) is just from the prior. Add the ln values to get
             %numerator
             clusterLogDist(ex,c) = log(priors(c)) + normalLogCoeff + normalLogOfExp;
+            
+            %{
+            %when the distribution is very small, clusterVariance becomes
+            %~0 and thus clusterLogDist becomes NaN. In this case we know
+            %the probability of distribution should be 0, and thus log(prob
+            %dist) is a very big negative number
+            if isnan(clusterLogDist(ex,c))
+                clusterLogDist(ex,c) = -realmax;
+            end
+            [a, MSGID] = lastwarn();%warnings OFF in case this happens
+            warning('off', MSGID);
+            %}
+            
+            %keep track of logPMax for this data point
             if(  clusterLogDist(ex,c) > logPMax )
                 logPMax = clusterLogDist(ex,c) ;
             end
@@ -150,6 +186,7 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
         %numerators
         clusterLogDist(ex,:) = clusterLogDist(ex,:) - clusterLogDistDenominators(ex);
     end
+       
     
     %now we have the cluster distributions. The distributions indicate the
     %weight each data point has towards each cluster
@@ -218,24 +255,6 @@ function totalLogProb = totalLogLikelihoodOfData(numExamples,clusterLogDistDenom
         totalLogProb = totalLogProb + clusterLogDistDenominators(ex);
     end
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
