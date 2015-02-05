@@ -6,7 +6,7 @@ function gaussmix(numClusters, dataFile,modelFile)
     
     repeat=true;
     iterationNo=0;
-    while repeat && iterationNo<5
+    while repeat && iterationNo<100
         [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClustersNumeric,means,variances,priors);
         
         %clusterLogDist
@@ -18,18 +18,18 @@ function gaussmix(numClusters, dataFile,modelFile)
         %priors
         
         [means, variances, priors] = mStep(data,numExamples,numFeatures,numClustersNumeric,clusterLogDist);
-        probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators);
-        nextLogProbMinusCurrent = probAfterIteration-logProb;
+        probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators)
+        nextLogProbMinusCurrent = probAfterIteration-logProb
         repeat = abs(nextLogProbMinusCurrent) > 0.001;
         logProb = probAfterIteration;
         iterationNo = iterationNo+1
         
-        %{
+        
         if nextLogProbMinusCurrent<0  && iterationNo ~= 2 %%first iteration, (prob-realmax), results in issues, so ignore
            disp('ERROR : Total probability decreasing!!'); 
            return
         end
-        %}
+        
     end
     
     %clusterLogDist
@@ -124,8 +124,7 @@ end
 
 function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClusters,means,variances,priors)
     clusterLogDist = zeros(numExamples,numClusters);
-    clusterLogDistDenominators = (1:numExamples).*0;
-    clusterLogDistDenominators = double(clusterLogDistDenominators);
+    clusterLogDistDenominators = zeros(1,numExamples);
     
     for ex=1:numExamples
         logPMax = -realmax;
@@ -204,13 +203,12 @@ function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClus
     variances = zeros(numClusters,numFeatures,numFeatures);
     for c=1:numClusters
         
-        varianceDiagonal = (1:numFeatures).*0;
-        varianceDiagonal = double(varianceDiagonal);
+        varianceDiagonal = zeros(1,numFeatures);
         for ex=1:numExamples
             %for every data feature, find sqaure distance from mean and
             %multiply by probability weight
             squareDistFromMean = ( data(ex,:) - means(c,:) ).^2;
-            varianceDiagonal = squareDistFromMean .* probabilityDistribution(c);
+            varianceDiagonal = varianceDiagonal + ( squareDistFromMean .* probabilityDistribution(ex,c) );
         end
         
         varianceDiagonal = varianceDiagonal ./ weightsSummedOverDataExamples(c);
@@ -221,11 +219,11 @@ function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClus
         end
     end
     
-    priors 
-    means
-    variances(1,:,:)
-    variances(2,:,:)
-    variances(3,:,:)
+    %priors 
+    %means
+    %variances(1,:,:)
+    %variances(2,:,:)
+    %variances(3,:,:)
     
 end
 
