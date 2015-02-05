@@ -1,37 +1,43 @@
-
-
 function gaussmix(numClusters, dataFile,modelFile)
     numClustersNumeric = str2double(numClusters);
     [data,numExamples,numFeatures] = scanIn(dataFile);
     [means, variances, priors] = init(data,numClustersNumeric);
-    logProb = realmin;
-        
+    logProb = totalLogLikelihoodOfData(numExamples,firstDenoms );
     repeat=true;
-    num=0;
-    while repeat && num<2
+    iterationNo=0;
+    while repeat && iterationNo<5
         [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClustersNumeric,means,variances,priors);
         
-        %testClusterLogDist(clusterLogDist)
+        %clusterLogDist
+        %clusterLogDistDenominators
+        %means
+        %variances(1,:,:)
+        %variances(2,:,:)
+        %variances(3,:,:)
+        %priors
         
         [means, variances, priors] = mStep(data,numExamples,numFeatures,numClustersNumeric,clusterLogDist);
-        %exp(clusterLogDist)
         probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators);
-        repeat = ( abs(probAfterIteration-logProb) ) > 0.001;
+        nextLogProbMinusCurrent = probAfterIteration-logProb
+        repeat = abs(nextLogProbMinusCurrent) > 0.001;
         logProb = probAfterIteration;
-        num = num+1;
+        iterationNo = iterationNo+1
+        
+        %{
+        if nextLogProbMinusCurrent<0  && iterationNo ~= 2 %%first iteration, (prob-realmax), results in issues, so ignore
+           disp('ERROR : Total probability decreasing!!'); 
+           return
+        end
+        %}
     end
     
+    %clusterLogDist
+    %clusterLogDistDenominators
+    %means
+    %variances(1,:,:)
+    %priors
+    
     writeOutput(modelFile,clusterLogDist,data);
-end
-
-function testClusterLogDist(clusterLogDist)
-    clusterLogDist(1,:)
-    clusterLogDist(2,:)
-    clusterLogDist(3,:) 
-    clusterLogDist(4,:)    
-    clusterLogDist(11,:)    
-    clusterLogDist(12,:)    
-    clusterLogDist(13,:)
 end
 
 function [rawData,numExamples,numFeatures] = scanIn( dataFile)
@@ -59,10 +65,9 @@ function writeOutput(modelFile,clusterLogDist,data)
     %cluster the example is assign to
     assignedCluster = (1:numExamples).*0;
     for ex=1:numExamples
-        max = realmin;
+        max = -realmax;
         
         for c=1:numClusters
-            clusterLogDist(ex,c)
             if(clusterLogDist(ex,c)>max)
                 assignedCluster(ex) = c;
                 max = clusterLogDist(ex,c);
@@ -73,48 +78,23 @@ function writeOutput(modelFile,clusterLogDist,data)
         fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
         fprintf(fid,'\n');
     end
-    
-    %{
-    %print out all the cluster assignments in order--not right, print off
-    %they are. in the wine-true they just happen to be in order
-    for c=1:numClusters
-       for ex=1:numExamples
-           if(assignedCluster(ex) == c)
-                fprintf(fid,'%d ',c);
-                fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
-                fprintf(fid,'\n');
-           end
-       end
-    end
-    %}
-    
+        
     fclose(fid);
 end
 
 function [means, variances, priors] = init(data, numClusters)
     %initialize cluster priors to a uniform distribution
-    priors( 1:numClusters ) =  1 / numClusters;
+    priors( 1:numClusters ) =  1.0 / double(numClusters) ;
     
     %initialize priors for each cluster to a uniform
     %distribution
     numExAndFeat = size(data);
     numEx = numExAndFeat(1);
-    numFeat =numExAndFeat(2);
-    
-    %{
-    %init cluster distributions to a uniform distribution, but take the log
-    %since that is expected
-    clusterLogDist = zeros(numEx,numClusters);
-    for i=1:numEx
-        for j=1:numClusters
-            clusterLogDist(i,j) = log( priors(j) );
-        end
-    end
-    %}
-    
+    numFeat = numExAndFeat(2);
+        
     %find mins and maxs of each data feature
     mins( 1 : numFeat ) =  realmax;
-    maxs( 1 : numFeat ) =  realmin;
+    maxs( 1 : numFeat ) =  -realmax;
     for i=1:numEx
        for j=1:numFeat
            if(data(i,j)>maxs(j))
@@ -125,29 +105,30 @@ function [means, variances, priors] = init(data, numClusters)
            end
        end
     end
-    
+        
     %init means to a random value in the range of the data
-    %init variances to a diagonal matrix of range/2
+    %init standard deviations to a fixed fraction of the range of each variable
     means = zeros(numClusters,numFeat);
     variances = zeros(numClusters,numFeat,numFeat);
     
     for i=1:numClusters
         for j=1:numFeat
             range = maxs(j)-mins(j);
-            %means(i,j) = range*rand()+mins(j);
-            means(i,j)=mins(j);
-            variances(i,j,j) = range / 2;
+            means(i,j) = range*rand()+mins(j);
+            %means(i,j)=mins(j);
+            variances(i,j,j) = ( range / 2.0 )^2 ;
         end
     end
-    
-    %variances(1,:,:)%ensure that variances are diagonal
 end
 
 function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClusters,means,variances,priors)
     clusterLogDist = zeros(numExamples,numClusters);
-    logPMax = realmin;
+    clusterLogDistDenominators = (1:numExamples).*0;
+    clusterLogDistDenominators = double(clusterLogDistDenominators);
     
     for ex=1:numExamples
+        logPMax = -realmax;
+        
         for c=1:numClusters
             %numerator is ln ( P(Ci) * P(Xk | Ci) )
             %P(Xk | Ci) = multivariate normal distribution
@@ -155,68 +136,60 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
             %apply log to that function, the coeffecient is now added and
             %the exponent of e is now subtracted
             clusterVariance =  reshape ( variances(c,:,:),[numFeatures numFeatures] ) ;
-            normalLogCoeff = -.5 * log( (2*pi)^double(numExamples) * norm( clusterVariance ) );%2pi^ex or numExamples?
+            normalLogCoeff = -.5 * log( (2*pi)^double(numExamples) * det( clusterVariance ) ); %2pi^ex or numExamples?
             %as my vectors are row vectors instead of column vectors, the
             %transpose has switched
             %NOTE:inverse tempVariance completed via the divide-faster than
             %inv(tempVariance)
-            normalLogOfExp = -.5 * ( data(ex,:) - means(c,:) ) / clusterVariance *  transpose( data(ex,:)-means(c,:) ) ; 
+            normalLogOfExp = -.5 * ( data(ex,:) - means(c,:) ) / clusterVariance *  transpose( data(ex,:) - means(c,:) ) ; 
                         
+            [a, MSGID] = lastwarn();%warnings OFF - should be removed
+            warning('off', MSGID);
+
             %P(Ci) is just from the prior. Add the ln values to get
             %numerator
             clusterLogDist(ex,c) = log(priors(c)) + normalLogCoeff + normalLogOfExp; 
-                        
-            %must find the 1 largest numerator to use logsum in the
-            %denominator
-            if(clusterLogDist(ex,c)>logPMax)
-                logPMax=clusterLogDist(ex,c);
+            
+            if(  clusterLogDist(ex,c) > logPMax )
+                logPMax = clusterLogDist(ex,c) ;
             end
         end
-    end
-    
-    %clusterLogDist
-    
-    %after finding all the numerators & logPMax, log sum must be used to find denomator. 
-    clusterLogDistDenominators = (1:numExamples).*0;
-    for ex=1:numExamples
-        %LOGSUM :: log(SUM e^Xi) = Xmax+log(SUM e^(Xi-Xmax))
+        
+        %after finding all the numerators & logPMax, use LogSum over the
+        %numerators to find the denominator (normalizing constant) of every
+        %example
         logSum=0;
         for c=1:numClusters
             logSum = logSum + exp(clusterLogDist(ex,c)-logPMax);
         end
-        
         clusterLogDistDenominators(ex) = logPMax + log(logSum);
         
-        %Once denominator has been found, subtract it from every numerator
-        for c=1:numClusters
-            clusterLogDist(ex,c) = clusterLogDist(ex,c) - clusterLogDistDenominators(ex);
-        end
+        %Once denominator has been found, subtract it from this example's
+        %numerators
+        clusterLogDist(ex,:) = clusterLogDist(ex,:) - clusterLogDistDenominators(ex);
     end
-    
-    %clusterLogDist
     
     %now we have the cluster distributions. The distributions indicate the
     %weight each data point has towards each cluster
 end
 
 function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClusters,clusterLogDist)
-    %NOTE :safe to convert from clusterLogDist back to probability as the value
-    %should be large
-    
+    %NOTE :safe to convert from clusterLogDist back to probability as it is big
+   
     %for each cluster prior, average the distribution over every examples
-    %prior(cluster=c) = 
-    % [ SUM OVER DATA EXAMPLES Prob(c|data) ]/numDataExamples
+    %prior(cluster=c) = [ SUM OVER DATA EXAMPLES Prob(c|data) ]/numDataExamples
     priors = (1:numClusters).*0;
+    priors = double(priors);
     
     for c=1:numClusters
         for ex=1:numExamples
             priors(c) = priors(c) + exp(clusterLogDist(ex,c));
         end
-        priors(c) = priors(c) / numExamples;
+        priors(c) = priors(c) / double(numExamples);
     end
     
     %for each mean, find weighted average of the data
-    %MEANcluster = [ Prob(c|data) * SUM OVER DATA EXAMPLES data ] / [SUM OVER DATA EXAMPLES Prob(c|data) ]
+    %MEAN(cluster=c) = [ SUM OVER DATA EXAMPLES data * Prob(c|data) ] / [SUM OVER DATA EXAMPLES Prob(c|data) ]
     means = zeros(numClusters,numFeatures);
     for c=1:numClusters
         denom=0;
@@ -224,64 +197,70 @@ function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClus
             %for each cluster mean, sum up the data features weighted by
             %probability
             weightProb = exp(clusterLogDist(ex,c));
-            means(c,:) = means(c,:) +  data(ex,:);
+            means(c,:) = means(c,:) + ( data(ex,:) .* weightProb );
             %sum the weights to find the denominator
             denom = denom + weightProb;
         end
-        means(c,
         means(c,:) = means(c,:) ./ denom;
     end
     
     %for each variance, find distance from mean, square, and weight by dist
+    %variance(cluster=c) = [SUM OVER DATA EXAMPLES (data-mean^2) * Prob(c|data)] / [SUM OVER DATA EXAMPLES Prob(c|data) ]
     variances = zeros(numClusters,numFeatures,numFeatures);
     for c=1:numClusters
         
-        numerators = (1:numFeatures).*0;
+        varianceDiagonal = (1:numFeatures).*0;
+        varianceDiagonal = double(varianceDiagonal);
         denom=0;
         for ex=1:numExamples
             %for every data feature, find sqaure distance from mean and
             %multiply by probability weight
             weightProb = exp(clusterLogDist(ex,c));
             squareDistFromMean = ( data(ex,:) - means(c,:) ).^2;
-            numerators = squareDistFromMean.*weightProb;
+            varianceDiagonal = squareDistFromMean.*weightProb;
             %sum the weights to find the denominator
             denom = denom + weightProb;
         end
-        numerators = numerators ./ denom;
+        
+        varianceDiagonal = varianceDiagonal ./ denom;
         
         %assign the variances to the diagonal of the variance cluster matrix
         for f=1:numFeatures
-            variances(c,f,f) = numerators(f);
+            variances(c,f,f) = varianceDiagonal(f);
         end
     end
 end
 
-function totalLogProb = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators)
+function totalLogProb = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators)    
+    %{
+    total likelihood = P(x1,x2,…,xn) = \prod_i \sum_c P(x_i | cluster_c) P(cluster_c)
+    log (P(x1,x2,…,xn)) = log( \prod_i \sum_c P(x_i | cluster_c) P(cluster_c) )
+                           =\sum_i log( \sum_c P(x_i | cluster_c) P(cluster_c) ) )
+    Given each denominator = log(\sum_c P(x_i | cluster_c) P(cluster_c) ) ) then 
+    log (P(x1,x2,…,xn)) = \sum_i (denominator_i)
+    %}
+
     totalLogProb=0;
+    for ex=1:numExamples
+        totalLogProb = totalLogProb + clusterLogDistDenominators(ex);
+    end
     
     %{
-    %logsum over all numerators
-    numExAndClust=size(clusterLogDistNumerators);
-    numExamples = numExAndClust(1);
-    numClusters = numExAndClust(2);
-    
+    %logsum the denominators to find the total  
+    logPMax=-realmax;
     for ex=1:numExamples
-       logSum=0;
-       for c=1:numClusters
-           logSum = logSum+exp(clusterLogDistNumerators(ex,c) - logPMax);
-       end
-       logSum = logPMax + log(logSum);
-       
-       totalProb = totalProb + logSum;
+        if clusterLogDistDenominators(ex) > logPMax
+            logPMax = clusterLogDistDenominators(ex);
+        end
     end
+    
+    logSum=0;
+    for ex=1:numExamples
+        logSum = logSum + exp(clusterLogDistDenominators(ex) - logPMax);
+    end
+    
+    totalLogProb = logPMax + log(logSum);
     %}
-    
-    %sum up the denominators to find the total    
-    for ex=1:numExamples
-        totalLogProb = totalLogProb +clusterLogDistDenominators(ex);
-    end
-    
-    %totalLogProb = exp(totalProb)
 end
 
 
