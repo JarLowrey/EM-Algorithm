@@ -6,37 +6,24 @@ function gaussmix(numClusters, dataFile,modelFile)
     
     repeat=true;
     iterationNo=0;
-    while repeat && iterationNo<100
+    while repeat 
         [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,numFeatures,numClustersNumeric,means,variances,priors);
-        
-        %clusterLogDist
-        %clusterLogDistDenominators
-        %means
-        %variances(1,:,:)
-        %variances(2,:,:)
-        %variances(3,:,:)
-        %priors
-        
         [means, variances, priors] = mStep(data,numExamples,numFeatures,numClustersNumeric,clusterLogDist);
-        probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators)
-        nextLogProbMinusCurrent = probAfterIteration-logProb
-        repeat = abs(nextLogProbMinusCurrent) > 0.001;
+        
+        %see if stopping condition has been met by finding total log Prob
+        probAfterIteration = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators);
+        nextLogProbMinusCurrent = probAfterIteration-logProb;
+        repeat = abs(nextLogProbMinusCurrent) > 0.00000001;
         logProb = probAfterIteration;
         iterationNo = iterationNo+1
         
-        
+        %total log probability is monotonically increasing. Otherwise there
+        %is an error in the program
         if nextLogProbMinusCurrent<0  && iterationNo ~= 2 %%first iteration, (prob-realmax), results in issues, so ignore
            disp('ERROR : Total probability decreasing!!'); 
            return
         end
-        
     end
-    
-    %clusterLogDist
-    %clusterLogDistDenominators
-    %means
-    %variances(1,:,:)
-    %priors
     
     writeOutput(modelFile,clusterLogDist,data);
 end
@@ -76,7 +63,7 @@ function writeOutput(modelFile,clusterLogDist,data)
         end
         
         fprintf(fid,'%d ',assignedCluster(ex) );
-        fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
+        %fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
         fprintf(fid,'\n');
     end
         
