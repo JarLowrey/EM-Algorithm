@@ -63,7 +63,7 @@ function writeOutput(modelFile,clusterLogDist,data)
         end
         
         fprintf(fid,'%d ',assignedCluster(ex) );
-        %fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
+        fprintf(fid,repmat('%f ',[1,numFeatures]),data(ex,:) );
         fprintf(fid,'\n');
     end
         
@@ -103,7 +103,6 @@ function [means, variances, priors] = init(data, numClusters)
         for j=1:numFeat
             range = maxs(j)-mins(j);
             means(i,j) = range*rand()+mins(j);
-            %means(i,j)=mins(j);
             variances(i,j,j) = ( range / 2.0 )^2 ;
         end
     end
@@ -130,9 +129,6 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
             %inv(tempVariance)
             normalLogOfExp = -.5 * ( data(ex,:) - means(c,:) ) / clusterVariance *  transpose( data(ex,:) - means(c,:) ) ; 
             
-            [a, MSGID] = lastwarn();%warnings OFF - should be removed
-            warning('off', MSGID);
-
             %P(Ci) is just from the prior. Add the ln values to get
             %numerator
             clusterLogDist(ex,c) = log(priors(c)) + normalLogCoeff + normalLogOfExp;
@@ -154,8 +150,6 @@ function [clusterLogDist,clusterLogDistDenominators] = eStep(data,numExamples,nu
         %numerators
         clusterLogDist(ex,:) = clusterLogDist(ex,:) - clusterLogDistDenominators(ex);
     end
-    
-    
     
     %now we have the cluster distributions. The distributions indicate the
     %weight each data point has towards each cluster
@@ -206,12 +200,8 @@ function [means, variances, priors] = mStep(data,numExamples,numFeatures,numClus
         end
     end
     
-    %priors 
-    %means
-    %variances(1,:,:)
-    %variances(2,:,:)
-    %variances(3,:,:)
-    
+    %now we have cluster priors and the parameters that define a cluster,
+    %means and variances of each data feature
 end
 
 function totalLogProb = totalLogLikelihoodOfData(numExamples,clusterLogDistDenominators)    
@@ -227,23 +217,6 @@ function totalLogProb = totalLogLikelihoodOfData(numExamples,clusterLogDistDenom
     for ex=1:numExamples
         totalLogProb = totalLogProb + clusterLogDistDenominators(ex);
     end
-    
-    %{
-    %logsum the denominators to find the total  
-    logPMax=-realmax;
-    for ex=1:numExamples
-        if clusterLogDistDenominators(ex) > logPMax
-            logPMax = clusterLogDistDenominators(ex);
-        end
-    end
-    
-    logSum=0;
-    for ex=1:numExamples
-        logSum = logSum + exp(clusterLogDistDenominators(ex) - logPMax);
-    end
-    
-    totalLogProb = logPMax + log(logSum);
-    %}
 end
 
 
